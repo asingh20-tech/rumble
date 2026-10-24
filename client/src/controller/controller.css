@@ -1,0 +1,198 @@
+/* Phone controller only. Page-level rules apply while useControllerLock() is mounted. */
+
+html.controller-locked,
+html.controller-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.controller-locked body {
+  /* Pinning the body is what actually stops iOS rubber-banding and pull-to-refresh. */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.controller-root {
+  height: 100%;
+  height: 100dvh;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.controller-root input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.controller-root input[type='range'] {
+  touch-action: pan-x;
+  accent-color: #a855f7;
+}
+
+/* Tilt meter */
+.tilt-meter {
+  position: relative;
+  width: min(58vw, 30dvh, 15rem);
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  border: 3px solid var(--player-color);
+  background:
+    radial-gradient(
+      circle,
+      transparent 18%,
+      color-mix(in srgb, var(--player-color) 10%, transparent) 19%,
+      transparent 20%
+    ),
+    radial-gradient(circle, color-mix(in srgb, var(--player-color) 14%, transparent), #151a35 70%);
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--player-color) 55%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--player-color) 30%, transparent);
+}
+
+.tilt-meter::before,
+.tilt-meter::after {
+  content: '';
+  position: absolute;
+  background: color-mix(in srgb, var(--player-color) 22%, transparent);
+}
+
+.tilt-meter::before {
+  left: 50%;
+  top: 6%;
+  bottom: 6%;
+  width: 1px;
+}
+
+.tilt-meter::after {
+  top: 50%;
+  left: 6%;
+  right: 6%;
+  height: 1px;
+}
+
+.tilt-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22%;
+  aspect-ratio: 1;
+  margin: -11% 0 0 -11%;
+  border-radius: 9999px;
+  background: var(--player-color);
+  box-shadow:
+    0 0 18px var(--player-color),
+    0 0 36px var(--player-color);
+  will-change: transform;
+}
+
+.tilt-meter.is-calibrating .tilt-dot {
+  animation: tilt-pulse 0.5s ease-in-out infinite alternate;
+}
+
+/* Virtual joystick */
+.joystick {
+  position: relative;
+  width: min(62vw, 30dvh, 15rem);
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  border: 3px dashed color-mix(in srgb, var(--player-color) 70%, transparent);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--player-color) 12%, transparent),
+    #151a35 70%
+  );
+  touch-action: none;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40%;
+  aspect-ratio: 1;
+  margin: -20% 0 0 -20%;
+  border-radius: 9999px;
+  background: var(--player-color);
+  box-shadow: 0 0 24px var(--player-color);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Shake counter flash: remounted with a new key on every shake */
+.shake-flash {
+  animation: shake-flash 0.45s ease-out;
+}
+
+@keyframes shake-flash {
+  0% {
+    transform: scale(1.5);
+    color: #fbbf24;
+    text-shadow: 0 0 24px #fbbf24;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes tilt-pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+
+/* Rotate-to-portrait overlay: only on touch phones held sideways, not on laptops. */
+.rotate-overlay {
+  display: none;
+}
+
+@media (orientation: landscape) and (pointer: coarse) and (max-height: 540px) {
+  .rotate-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    background: #090b1af2;
+    color: #fff;
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .rotate-overlay svg {
+    color: #a855f7;
+    filter: drop-shadow(0 0 12px #a855f7);
+    animation: rotate-hint 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes rotate-hint {
+  0%,
+  30% {
+    transform: rotate(90deg);
+  }
+  70%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shake-flash,
+  .tilt-meter.is-calibrating .tilt-dot,
+  .rotate-overlay svg {
+    animation: none;
+  }
+}
