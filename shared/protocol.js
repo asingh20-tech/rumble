@@ -80,8 +80,10 @@
 export const EVENTS = Object.freeze({
   /**
    * C→S (host laptop). Create a new room; the creating socket becomes host.
-   * payload: {}
-   * ack: AckResult<{ room: RoomSnapshot }>
+   * payload: {} to create, or { code: string, hostToken: string } to reclaim a room after a
+   *          reload/reconnect (within RECONNECT_GRACE_MS). If the code/token is invalid or the
+   *          room is gone, a new room is created instead.
+   * ack: AckResult<{ room: RoomSnapshot, hostToken: string }>
    */
   ROOM_CREATE: 'room:create',
 
