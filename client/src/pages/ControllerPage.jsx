@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, LogIn, RotateCcw, WifiOff } from 'lucide-react';
 import { EVENTS, ERROR_CODES } from '@rumble/shared/protocol';
@@ -11,6 +11,12 @@ import {
 import { socket } from '../network/socket.js';
 import { clearSession, loadSession, saveSession } from '../network/session.js';
 import { useConnectionStatus } from '../network/useConnectionStatus.js';
+import { useInputStream, useShakeSender } from '../network/useInputSender.js';
+import { useControllerInput } from '../controller/useControllerInput.js';
+import { useControllerLock } from '../controller/useControllerLock.js';
+import { useWakeLock } from '../controller/useWakeLock.js';
+import MotionCalibration from '../controller/MotionCalibration.jsx';
+import RotateOverlay from '../controller/RotateOverlay.jsx';
 
 const ACK_TIMEOUT_MS = 8000;
 
@@ -73,15 +79,19 @@ export default function ControllerPage() {
     };
   }, []);
 
-  // Lock down the page for touch play: no rubber-band scrolling or pull-to-refresh.
-  useEffect(() => {
-    const { style } = document.body;
-    const previous = style.overscrollBehavior;
-    style.overscrollBehavior = 'none';
-    return () => {
-      style.overscrollBehavior = previous;
-    };
+  // Lock down the page for touch play: no scrolling, zooming, pull-to-refresh or selection.
+  useControllerLock();
+
+  // Inputs are sent from the lobby on, so tilt/shake can be tested before a round starts.
+  const [serverShake, setServerShake] = useState(null);
+  const onShakeAck = useCallback((res) => {
+    if (res.ok) setServerShake({ accepted: res.accepted, charge: res.charge });
   }, []);
+  const sendShake = useShakeSender(onShakeAck);
+  const controls = useControllerInput({ onShake: sendShake });
+  const seated = status === 'joined' && room != null;
+  useInputStream({ active: seated && connected, getInput: controls.getInput });
+  useWakeLock(seated);
 
   useEffect(() => {
     let active = true;
@@ -205,11 +215,25 @@ export default function ControllerPage() {
   const me = room?.players.find((p) => p.id === sessionRef.current?.playerId);
 
   return (
-    <main className="flex min-h-full touch-manipulation flex-col items-center justify-center gap-8 overflow-hidden px-6 pt-[max(4rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] text-center select-none">
-      <h1 className="neon-title text-5xl">RUMBLE</h1>
+    <main
+      className={`controller-root flex flex-col items-center overflow-hidden px-6 pb-[max(1rem,env(safe-area-inset-bottom))] text-center ${
+        status === 'joined' && me
+          ? 'justify-start gap-[min(0.75rem,1.6dvh)] pt-[max(3.25rem,env(safe-area-inset-top))]'
+          : 'justify-center gap-8 pt-[max(4rem,env(safe-area-inset-top))]'
+      }`}
+    >
+      <RotateOverlay />
+      {/* Seated phones need every pixel for controls; the player card is the header. */}
+      {!(status === 'joined' && me) && <h1 className="neon-title text-5xl">RUMBLE</h1>}
 
       {status === 'joined' && me ? (
-        <Lobby me={me} room={room} connected={connected} />
+        <Lobby
+          me={me}
+          room={room}
+          connected={connected}
+          controls={controls}
+          serverShake={serverShake}
+        />
       ) : status === 'rejoining' || (status === 'joined' && !me) ? (
         <div className="flex w-full max-w-sm flex-col items-center gap-6">
           <Loader2 className="animate-spin text-rumble-purple" size={56} aria-hidden="true" />
@@ -306,7 +330,7 @@ function ErrorText({ message }) {
   );
 }
 
-function Lobby({ me, room, connected }) {
+function Lobby({ me, room, connected, controls, serverShake }) {
   const color = PLAYER_COLORS[me.colorIndex]?.hex ?? PLAYER_COLORS[0].hex;
   const waitingText =
     room.phase === 'lobby'
@@ -316,37 +340,36 @@ function Lobby({ me, room, connected }) {
         : 'Get ready';
 
   return (
-    <div className="flex w-full max-w-sm flex-col items-center gap-8">
+    <div className="flex w-full max-w-sm flex-1 flex-col items-center gap-[min(0.75rem,1.6dvh)]">
       <div
-        className="size-40 animate-pulse rounded-full border-4"
-        style={{
-          borderColor: color,
-          backgroundColor: `${color}33`,
-          boxShadow: `0 0 32px ${color}, inset 0 0 32px ${color}`,
-        }}
-        aria-hidden="true"
-      />
-      <div className="flex flex-col gap-2">
-        <p
-          className="text-5xl font-black break-all"
-          style={{ color, textShadow: `0 0 16px ${color}` }}
-        >
-          {me.name}
-        </p>
-        <p className="text-lg tracking-widest text-slate-400 uppercase">
-          {PLAYER_COLORS[me.colorIndex]?.name} · Room {room.code}
-        </p>
+        className="flex w-full items-center gap-3 rounded-2xl border-2 bg-rumble-arena px-4 py-2 text-left"
+        style={{ borderColor: color, boxShadow: `0 0 20px ${color}66` }}
+      >
+        <div
+          className="size-8 shrink-0 animate-pulse rounded-full"
+          style={{ backgroundColor: color, boxShadow: `0 0 16px ${color}` }}
+          aria-hidden="true"
+        />
+        <div className="min-w-0 flex-1">
+          <p
+            className="truncate text-xl font-black"
+            style={{ color, textShadow: `0 0 12px ${color}` }}
+          >
+            {me.name}
+          </p>
+          <p className="text-sm tracking-widest text-slate-400 uppercase">
+            Room {room.code} · {room.players.length}/{room.maxPlayers} in
+          </p>
+        </div>
       </div>
-      <p className="text-3xl font-black tracking-[0.2em] text-white uppercase">{waitingText}</p>
-      <p className="text-lg text-slate-300">
-        {room.players.length} / {room.maxPlayers} players in
-      </p>
+      <p className="text-xl font-black tracking-[0.2em] text-white uppercase">{waitingText}</p>
       {!connected && (
         <p className="flex items-center gap-2 text-lg font-semibold text-neon-yellow">
           <WifiOff size={20} aria-hidden="true" />
           Connection lost. Reconnecting…
         </p>
       )}
+      <MotionCalibration controls={controls} color={color} serverShake={serverShake} />
     </div>
   );
 }

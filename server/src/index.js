@@ -3,7 +3,11 @@ import { pathToFileURL } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { RECONNECT_GRACE_MS, resolvePlayerLimits } from '@rumble/shared/constants';
+import {
+  INPUT_RATE_LIMIT_PER_SEC,
+  RECONNECT_GRACE_MS,
+  resolvePlayerLimits,
+} from '@rumble/shared/constants';
 import { EVENTS, ERROR_CODES, ackError, ackOk } from '@rumble/shared/protocol';
 import {
   createRoom,
@@ -17,6 +21,19 @@ import {
   rejoinRoom,
   toSnapshot,
 } from './rooms.js';
+import {
+  SHAKE_RATE_LIMIT_PER_SEC,
+  applyInput,
+  applyShake,
+  countDropped,
+  createInputStore,
+  createRateLimiter,
+  parseInput,
+  parseShake,
+  removeInputState,
+  startInputSession,
+  takeInputSummary,
+} from './input.js';
 
 const DEFAULT_CLIENT_ORIGIN = 'http://localhost:5173';
 
@@ -64,7 +81,7 @@ export function createRumbleServer({ env = process.env } = {}) {
     return closeIo(fn);
   };
 
-  return { app, httpServer, io, origins, limits, store: lobby.store };
+  return { app, httpServer, io, origins, limits, store: lobby.store, inputs: lobby.inputs };
 }
 
 const log = (code, message) => console.log(`[room ${code}] ${message}`);
@@ -80,13 +97,19 @@ function asObject(payload) {
 }
 
 /**
- * Socket wiring for room:create / join / rejoin and disconnect grace periods.
- * Room state lives in rooms.js; this layer owns Socket.IO rooms, broadcasts and timers.
+ * Socket wiring for room:create / join / rejoin, controller input and disconnect grace
+ * periods. Room state lives in rooms.js and input state in input.js; this layer owns
+ * Socket.IO rooms, broadcasts and timers.
  * @param {import('socket.io').Server} io
- * @param {{ limits: { minPlayers: number, maxPlayers: number }, graceMs: number }} options
+ * @param {{ limits: { minPlayers: number, maxPlayers: number, isDev?: boolean },
+ *           graceMs: number, logInputs?: boolean }} options
  */
-export function createLobbyHandlers(io, { limits, graceMs }) {
+export function createLobbyHandlers(io, { limits, graceMs, logInputs = limits.isDev }) {
   const store = createRoomStore();
+  const inputs = createInputStore();
+  /** @type {Map<string, { input: ReturnType<typeof createRateLimiter>,
+   *                       shake: ReturnType<typeof createRateLimiter> }>} socketId -> limiters */
+  const limiters = new Map();
   /** @type {Map<string, NodeJS.Timeout>} playerId -> removal timer */
   const playerTimers = new Map();
   /** @type {Map<string, NodeJS.Timeout>} room code -> host-gone timer */
@@ -111,11 +134,46 @@ export function createLobbyHandlers(io, { limits, graceMs }) {
     const room = deleteRoom(store, code);
     if (!room) return;
     clearHostTimer(code);
-    for (const playerId of room.players.keys()) clearPlayerTimer(playerId);
+    for (const playerId of room.players.keys()) {
+      clearPlayerTimer(playerId);
+      removeInputState(inputs, playerId);
+    }
     io.to(code).emit(EVENTS.ROOM_CLOSED, { code, reason });
     io.in(code).socketsLeave(code);
     log(code, `closed (${reason})`);
   };
+
+  const getLimiters = (socketId) => {
+    let entry = limiters.get(socketId);
+    if (!entry) {
+      entry = {
+        input: createRateLimiter({ limit: INPUT_RATE_LIMIT_PER_SEC }),
+        shake: createRateLimiter({ limit: SHAKE_RATE_LIMIT_PER_SEC }),
+      };
+      limiters.set(socketId, entry);
+    }
+    return entry;
+  };
+
+  const playerIdFor = (socketId) => {
+    const binding = store.sockets.get(socketId);
+    return binding?.role === 'player' ? binding.playerId : null;
+  };
+
+  // Development aid: one line per active player per second showing what the server receives.
+  const inputLogTimer = logInputs
+    ? setInterval(() => {
+        const now = Date.now();
+        for (const room of store.rooms.values()) {
+          for (const player of room.players.values()) {
+            const state = inputs.get(player.id);
+            const line = state && takeInputSummary(state, player.name, now);
+            if (line) log(room.code, line);
+          }
+        }
+      }, 1000)
+    : null;
+  inputLogTimer?.unref();
 
   function attach(socket) {
     socket.on(EVENTS.ROOM_CREATE, (payload, ack) => {
@@ -158,10 +216,17 @@ export function createLobbyHandlers(io, { limits, graceMs }) {
       }
       const { room, player, duplicate } = result;
       socket.join(room.code);
-      if (!duplicate) log(room.code, `${player.name} joined (color ${player.colorIndex})`);
+      if (!duplicate) {
+        startInputSession(inputs, player.id);
+        log(room.code, `${player.name} joined (color ${player.colorIndex})`);
+      }
       reply(
         ack,
-        ackOk({ playerId: player.id, reconnectToken: player.reconnectToken, room: toSnapshot(room) }),
+        ackOk({
+          playerId: player.id,
+          reconnectToken: player.reconnectToken,
+          room: toSnapshot(room),
+        }),
       );
       if (!duplicate) broadcast(room);
     });
@@ -184,14 +249,48 @@ export function createLobbyHandlers(io, { limits, graceMs }) {
         leaveSocketIoRoom(previousSocketId, room.code);
       }
       clearPlayerTimer(player.id);
+      startInputSession(inputs, player.id);
       socket.join(room.code);
       log(room.code, `${player.name} reconnected`);
       reply(ack, ackOk({ playerId: player.id, room: toSnapshot(room) }));
       broadcast(room);
     });
 
+    // High-frequency tilt input: no ack, anything malformed or over the rate limit is dropped.
+    socket.on(EVENTS.PLAYER_INPUT, (payload) => {
+      const playerId = playerIdFor(socket.id);
+      if (!getLimiters(socket.id).input.tryAcquire()) {
+        if (playerId) countDropped(inputs, playerId);
+        return;
+      }
+      const input = parseInput(payload);
+      if (!playerId) return;
+      if (!input) {
+        countDropped(inputs, playerId);
+        return;
+      }
+      applyInput(inputs, playerId, input);
+    });
+
+    socket.on(EVENTS.PLAYER_SHAKE, (payload, ack) => {
+      if (typeof payload === 'function') [payload, ack] = [undefined, payload];
+      if (!getLimiters(socket.id).shake.tryAcquire()) {
+        return reply(ack, ackError(ERROR_CODES.RATE_LIMITED, 'Too many shakes.'));
+      }
+      const shake = parseShake(payload);
+      if (!shake) return reply(ack, ackError(ERROR_CODES.BAD_INPUT, 'Invalid shake.'));
+      const binding = store.sockets.get(socket.id);
+      const room = binding?.role === 'player' ? store.rooms.get(binding.code) : undefined;
+      if (!room) return reply(ack, ackError(ERROR_CODES.BAD_INPUT, 'Join a room first.'));
+      const result = applyShake(inputs, binding.playerId, shake.seq, {
+        charging: room.phase === 'playing',
+      });
+      reply(ack, ackOk({ accepted: result.accepted, charge: result.charge }));
+    });
+
     socket.on('disconnect', (reason) => {
       console.log(`[socket ${socket.id}] disconnected (${reason})`);
+      limiters.delete(socket.id);
       const result = disconnectSocket(store, socket.id);
       if (!result) return;
       const { room } = result;
@@ -220,6 +319,7 @@ export function createLobbyHandlers(io, { limits, graceMs }) {
           playerTimers.delete(player.id);
           if (store.rooms.get(room.code) !== room) return;
           if (expirePlayer(room, player.id, Date.now(), 0)) {
+            removeInputState(inputs, player.id);
             log(room.code, `${player.name} removed after grace period`);
             broadcast(room);
           }
@@ -230,13 +330,14 @@ export function createLobbyHandlers(io, { limits, graceMs }) {
   }
 
   function dispose() {
+    clearInterval(inputLogTimer);
     for (const t of playerTimers.values()) clearTimeout(t);
     for (const t of hostTimers.values()) clearTimeout(t);
     playerTimers.clear();
     hostTimers.clear();
   }
 
-  return { store, attach, dispose };
+  return { store, inputs, attach, dispose };
 }
 
 function main() {
