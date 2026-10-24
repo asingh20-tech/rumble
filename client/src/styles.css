@@ -33,3 +33,72 @@ body {
     0 0 24px var(--color-rumble-purple),
     0 0 48px rgb(168 85 247 / 0.6);
 }
+
+* { box-sizing: border-box; }
+a, button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+a:focus-visible, button:focus-visible { outline: 3px solid #22d3ee; outline-offset: 6px; }
+.arcade-page {
+  min-height: 100%;
+  min-height: 100dvh;
+  background: radial-gradient(ellipse at 15% 0%, #48207455, transparent 55%), radial-gradient(ellipse at 95% 70%, #12475b44, transparent 50%), #090b1a;
+}
+.host-page { padding: 3.5rem clamp(1.25rem, 5vw, 6rem) 2.5rem; }
+.arcade-header, .roster-heading, .host-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.arcade-brand { font-size: 2rem; font-weight: 950; letter-spacing: -.06em; color: #fff; text-decoration: none; }
+.arcade-brand span { display: inline-block; color: #a855f7; margin-left: .4rem; }
+.arcade-eyebrow { font-size: .75rem; font-weight: 800; letter-spacing: .18em; }
+.arcade-header > p { color: #94a3b8; }
+.host-join-panel { display: flex; justify-content: space-between; align-items: center; gap: 2rem; padding: 3rem 0 2rem; }
+.host-join-panel h1 { font-size: clamp(2rem, 4vw, 4.5rem); font-weight: 900; letter-spacing: -.05em; margin: .5rem 0; }
+.lobby-description { color: #94a3b8; font-size: clamp(.9rem, 1.4vw, 1.1rem); }
+.room-code { font-size: clamp(3rem, 9.5vw, 10rem); font-weight: 950; letter-spacing: .07em; line-height: 1.3; color: #fff; text-shadow: 0 0 35px #a855f780; animation: lobby-neon 4s ease-in-out infinite alternate; }
+.room-qr { flex: 0 0 220px; width: 220px; text-align: center; }
+.qr-paper { display: inline-flex; background: #fff; border-radius: 18px; padding: 10px; box-shadow: 0 0 50px #22d3ee20; margin-bottom: .75rem; }
+.room-qr > p { font-weight: 800; font-size: .85rem; letter-spacing: .08em; }
+.join-url { display: block; overflow-wrap: anywhere; font-size: .75rem; color: #94a3b8; margin-top: .4rem; text-decoration: underline; }
+.host-roster { border-top: 1px solid #ffffff18; padding-top: 1.5rem; }
+.roster-heading h2 { font-size: 1rem; font-weight: 800; letter-spacing: .1em; }
+.roster-heading h2 span { color: #22d3ee; margin-left: .7rem; }
+.roster-heading > p { color: #94a3b8; font-size: .9rem; }
+.player-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; list-style: none; padding: 0; margin: 1.25rem 0 2rem; }
+.player-card { display: flex; align-items: center; gap: .85rem; min-width: 0; padding: 1.2rem; border: 1px solid var(--player-color); border-radius: 16px; background: #151a35; box-shadow: inset 0 0 25px color-mix(in srgb, var(--player-color) 6%, transparent), 0 0 20px color-mix(in srgb, var(--player-color) 12%, transparent); animation: lobby-player-enter .35s ease-out both; }
+.player-avatar { flex-shrink: 0; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: var(--player-color); color: #090b1a; font-weight: 950; font-size: 1.4rem; }
+.player-details { min-width: 0; }
+.player-details h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.25rem; font-weight: 800; }
+.player-status { font-size: .75rem; color: var(--player-color); margin-top: .2rem; }
+.player-card-away { opacity: .55; box-shadow: none; }
+.player-empty { display: flex; align-items: center; justify-content: center; gap: .6rem; border: 1px dashed #ffffff22; border-radius: 16px; min-height: 94px; font-size: .8rem; color: #7f8da6; }
+.player-empty span { font-size: 1.5rem; }
+.arcade-button { display: inline-flex; align-items: center; justify-content: center; gap: 2rem; border: 1px solid #c084fc; border-radius: 12px; padding: 1rem 1.75rem; min-height: 60px; background: #a855f7; color: #fff; box-shadow: 0 0 30px #a855f745; font-size: 1rem; font-weight: 900; letter-spacing: .05em; text-decoration: none; cursor: pointer; }
+.arcade-button:disabled { background: #24293d; border-color: #ffffff15; color: #8994aa; box-shadow: none; cursor: default; }
+.arcade-button:active:not(:disabled) { transform: translateY(1px); }
+.start-button { min-width: 270px; justify-content: space-between; }
+.host-footer > p { color: #94a3b8; font-size: .9rem; }
+.host-start > p { color: #94a3b8; font-size: .8rem; margin-top: .6rem; }
+.lobby-notice { background: #fbbf2410; border: 1px solid #fbbf2440; border-radius: 12px; color: #fde68a; padding: 1rem; margin: 1rem 0; font-size: .9rem; line-height: 1.6; }
+.lobby-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; min-height: 65vh; text-align: center; }
+.lobby-state h1 { font-size: clamp(2rem, 5vw, 4rem); font-weight: 900; letter-spacing: -.04em; }
+.lobby-orbit { font-size: 6rem; color: #a855f7; text-shadow: 0 0 35px #a855f770; animation: lobby-neon 2s infinite alternate; }
+.home-page { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.75rem; padding: 5rem 1.5rem 3rem; text-align: center; }
+.home-page h1 { font-size: clamp(3.3rem, 13vw, 10rem); letter-spacing: .08em; line-height: 1.1; }
+.home-tagline { color: #cbd5e1; font-size: clamp(1rem, 2.2vw, 1.5rem); line-height: 1.6; }
+.home-join-link { padding: .75rem; color: #94a3b8; text-decoration: underline; font-size: .9rem; }
+.home-footnote { margin-top: 1.5rem; color: #7f8da6; line-height: 1.8; }
+@keyframes lobby-neon { to { text-shadow: 0 0 55px #a855f7bb; } }
+@keyframes lobby-player-enter { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (min-width: 1800px) { .player-details h3 { font-size: 1.6rem; } .player-status { font-size: 1rem; } .player-avatar { width: 64px; height: 64px; } }
+@media (max-width: 1100px) { .player-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .arcade-header > p { display: none; }
+  .host-join-panel { flex-direction: column; text-align: center; }
+  .room-code { font-size: 12vw; }
+  .room-qr { flex-basis: auto; }
+  .roster-heading { align-items: flex-start; flex-direction: column; }
+  .host-footer { flex-direction: column; text-align: center; }
+  .player-card { padding: .75rem; gap: .5rem; }
+  .player-avatar { width: 32px; height: 38px; }
+  .player-details h3 { font-size: 1rem; }
+  .player-status { font-size: .65rem; }
+  .player-empty { min-height: 78px; font-size: .65rem; gap: .3rem; }
+}
+@media (prefers-reduced-motion: reduce) { .room-code, .player-card, .lobby-orbit { animation: none; } }
