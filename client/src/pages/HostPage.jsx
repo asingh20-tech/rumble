@@ -6,8 +6,13 @@ import PlayerCard from '../components/PlayerCard.jsx';
 import RoomQRCode from '../components/RoomQRCode.jsx';
 
 export default function HostPage() {
-  const [lobby] = useState(() => createHostLobby(socket));
-  const { room, status, error, connected, starting, startAccepted } = useSyncExternalStore(lobby.subscribe, lobby.getSnapshot, lobby.getSnapshot);
+  const [lobby] = useState(() => {
+    let storage;
+    try { storage = window.localStorage; } catch { /* Hosting still works when storage is blocked. */ }
+    return createHostLobby(socket, storage);
+  });
+  const { room, status, error, notice, connected, starting, startAccepted } = useSyncExternalStore(lobby.subscribe, lobby.getSnapshot, lobby.getSnapshot);
+  const restoring = status === 'restoring' || status === 'reconnecting';
   const connectedPlayers = room?.players.filter((player) => player.connected).length ?? 0;
   const missingPlayers = room ? Math.max(0, room.minPlayers - connectedPlayers) : 0;
   const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -20,6 +25,7 @@ export default function HostPage() {
       </header>
       {isLocalhost && <p className="lobby-notice" role="status">Phones can't reach localhost. Open the tunnel URL instead.</p>}
       {error && <p className="lobby-notice" role="alert">{error}</p>}
+      {notice && <p className="lobby-notice" role="status">{notice}</p>}
       {room ? (
         <>
           <section className="host-join-panel" aria-labelledby="lobby-title">
@@ -46,20 +52,20 @@ export default function HostPage() {
           <footer className="host-footer">
             <p>One screen. Your phones. Total chaos.</p>
             <div className="host-start">
-              <button type="button" className="arcade-button start-button" onClick={lobby.start} disabled={!room.canStart || !connected || starting || startAccepted}>
-                {starting ? 'STARTING…' : startAccepted ? 'START REQUESTED' : 'START'} <span aria-hidden="true">→</span>
+              <button type="button" className="arcade-button start-button" onClick={lobby.start} disabled={!room.canStart || !connected || status !== 'lobby' || starting || startAccepted}>
+                {restoring ? 'RECONNECTING…' : starting ? 'STARTING…' : startAccepted ? 'START REQUESTED' : 'START'} <span aria-hidden="true">→</span>
               </button>
               <p aria-live="polite">{startAccepted ? 'Waiting for the game screen.' : !room.canStart && missingPlayers > 0 ? `Need ${missingPlayers} more players` : 'Everyone in? Let’s do this.'}</p>
             </div>
           </footer>
         </>
       ) : (
-        <section className="lobby-state" aria-live="polite" aria-busy={status === 'creating'}>
+        <section className="lobby-state" aria-live="polite" aria-busy={status === 'creating' || restoring}>
           <span className="lobby-orbit" aria-hidden="true">✳</span>
           <p className="arcade-eyebrow">SET THE STAGE</p>
-          <h1>{status === 'closed' ? 'Room closed' : status === 'error' ? 'Could not create room' : status === 'timeout' ? 'Still waiting for the server…' : 'Creating room…'}</h1>
-          <p className="lobby-description">{status === 'creating' ? 'Getting a room code ready for your crew.' : 'Your next RUMBLE is one lobby away.'}</p>
-          {status !== 'creating' && <a className="arcade-button" href="/host">Create a new lobby <span aria-hidden="true">→</span></a>}
+          <h1>{status === 'closed' ? 'Room closed' : status === 'error' ? 'Could not open room' : status === 'timeout' ? 'Still waiting for the server…' : restoring ? 'Restoring your lobby…' : 'Creating room…'}</h1>
+          <p className="lobby-description">{restoring ? 'Bringing back your room code and your crew.' : status === 'creating' ? 'Getting a room code ready for your crew.' : 'Your next RUMBLE is one lobby away.'}</p>
+          {status !== 'creating' && !restoring && <a className="arcade-button" href="/host">{status === 'closed' ? 'Create a new lobby' : 'Try again'} <span aria-hidden="true">→</span></a>}
         </section>
       )}
     </main>
