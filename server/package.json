@@ -1,0 +1,22 @@
+{
+  "name": "@rumble/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "NODE_ENV=development node --watch --env-file-if-exists=.env src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rumble/shared": "*",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1",
+    "vitest": "4.1.11"
+  }
+}
