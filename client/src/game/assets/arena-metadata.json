@@ -1,0 +1,25 @@
+{
+  "generator": "build_arena.py",
+  "blender_version": "4.5.15 LTS",
+  "render_size": [
+    1024,
+    1024
+  ],
+  "transparent": true,
+  "projection": "orthographic top-down",
+  "orthographic_scale": 11.2,
+  "platform_radius_world": 5.0,
+  "platform_radius_logical": 250.0,
+  "display_size_logical": 559.9999999999999,
+  "display_center_logical": [
+    480.0,
+    300.0
+  ],
+  "generated_objects": 120,
+  "files": [
+    "arena.blend",
+    "arena.glb",
+    "arena-platform.png"
+  ],
+  "textures": "None: all geometry and materials are procedural."
+}
