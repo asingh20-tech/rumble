@@ -78,7 +78,6 @@ export default function HomePage() {
           <span><Sparkles size={17} aria-hidden="true" /> RUMBLE</span>
         </div>
       </section>
-      {import.meta.env.DEV && <Link to="/arena-preview" className="home-preview-link">Developer arena preview <ArrowRight size={13} aria-hidden="true" /></Link>}
     </main>
   );
 }

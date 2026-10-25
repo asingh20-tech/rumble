@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { ARENA, PLAYER_COLORS, THEME } from '@rumble/shared/constants';
 import platformTextureUrl from './assets/arena-platform.png';
 import platformModel from './assets/arena-metadata.json';
+import SnapshotInterpolation from './SnapshotInterpolation.js';
 
 const hexNumber = (hex) => Number.parseInt(hex.slice(1), 16);
 const TRAIL_LIFETIME = 520;
@@ -12,7 +13,8 @@ export default class ArenaScene extends Phaser.Scene {
     super({ key: 'ArenaScene' });
     this.reducedMotion = reducedMotion;
     this.onReady = onReady;
-    this.pendingSnapshot = { players: [] };
+    this.interpolation = new SnapshotInterpolation();
+    this.playerMetadata = new Map();
     this.playerViews = new Map();
     this.ready = false;
   }
@@ -40,7 +42,10 @@ export default class ArenaScene extends Phaser.Scene {
     this.particleGraphics = this.add.graphics().setDepth(2);
     this.trailGraphics = this.add.graphics().setDepth(3);
     this.ready = true;
-    this.setState(this.pendingSnapshot);
+    this.waitingText = this.add.text(ARENA.centerX, ARENA.centerY, 'Waiting for game state…', {
+      fontFamily: 'Avenir Next, Arial, sans-serif', fontSize: '18px', color: '#c4b5fd',
+      backgroundColor: '#090b1add', padding: { x: 16, y: 12 },
+    }).setOrigin(0.5).setDepth(5);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.releaseViews, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.releaseViews, this);
     this.onReady?.();
@@ -82,17 +87,23 @@ export default class ArenaScene extends Phaser.Scene {
   }
 
   /**
-   * Renderer view model: { players: [{ id, x, y, name, colorIndex, alive?, connected? }] }.
-   * In M4, combine game positions with RoomSnapshot player names/colors before calling.
-   * No network events are consumed, and the supplied snapshot is never mutated.
+   * GAME_STATE enriched with the latest RoomSnapshot names and color indices.
+   * Buffer positions here; never simulate or mutate the authoritative snapshot.
    */
-  setState(snapshot) {
+  setState(snapshot, receivedAt = performance.now()) {
     if (!Array.isArray(snapshot?.players)) return;
-    this.pendingSnapshot = snapshot;
-    if (!this.ready) return;
+    // Metadata can change without a new position tick (room:update).
+    this.playerMetadata = new Map(snapshot.players
+      .filter(({ name, colorIndex }) => typeof name === 'string' && PLAYER_COLORS[colorIndex])
+      .map(({ id, name, colorIndex }) => [id, { name, colorIndex }]));
+    this.interpolation.push(snapshot, receivedAt);
+  }
+
+  drawPlayers(players) {
     const present = new Set();
-    for (const player of snapshot.players) {
-      if (typeof player.id !== 'string' || !Number.isFinite(player.x) || !Number.isFinite(player.y)) continue;
+    for (const state of players) {
+      const player = { ...state, ...this.playerMetadata.get(state.id) };
+      if (typeof player.name !== 'string' || !PLAYER_COLORS[player.colorIndex]) continue;
       present.add(player.id);
       let view = this.playerViews.get(player.id);
       if (!view) {
@@ -107,8 +118,8 @@ export default class ArenaScene extends Phaser.Scene {
       }
       const color = PLAYER_COLORS[player.colorIndex] ?? PLAYER_COLORS[0];
       view.color = hexNumber(color.hex);
-      view.targetX = player.x;
-      view.targetY = player.y;
+      view.moved = Phaser.Math.Distance.Between(view.container.x, view.container.y, player.x, player.y) > 0.01;
+      view.container.setPosition(player.x, player.y);
       view.alive = player.alive !== false;
       view.halo.setFillStyle(view.color, 0.045);
       view.glow.setFillStyle(view.color, 0.1);
@@ -123,7 +134,7 @@ export default class ArenaScene extends Phaser.Scene {
     }
   }
 
-  update(time, delta) {
+  update(time) {
     if (!this.ready) return;
     const seconds = this.reducedMotion ? 0 : time / 1000;
     this.starGraphics.clear();
@@ -138,12 +149,12 @@ export default class ArenaScene extends Phaser.Scene {
       this.particleGraphics.fillStyle(particle.color, 0.15 + Math.sin(seconds + particle.phase) * 0.07).fillCircle(x, y, 1.7);
     }
     this.trailGraphics.clear();
-    const blend = this.reducedMotion ? 1 : 1 - Math.exp(-Math.min(delta, 100) / 65);
+    const players = this.interpolation.sample(performance.now());
+    this.waitingText.setVisible(players === null);
+    if (players) this.drawPlayers(players);
     for (const view of this.playerViews.values()) {
       const { container } = view;
-      const distance = Phaser.Math.Distance.Between(container.x, container.y, view.targetX, view.targetY);
-      container.setPosition(Phaser.Math.Linear(container.x, view.targetX, blend), Phaser.Math.Linear(container.y, view.targetY, blend));
-      if (!this.reducedMotion && view.alive && distance > 1 && time - view.lastTrailAt > 35) {
+      if (!this.reducedMotion && view.alive && view.moved && time - view.lastTrailAt > 35) {
         view.trail.push({ x: container.x, y: container.y, time });
         view.lastTrailAt = time;
       }
@@ -160,6 +171,16 @@ export default class ArenaScene extends Phaser.Scene {
     this.playerViews.clear();
     this.stars = [];
     this.drifters = [];
-    this.pendingSnapshot = { players: [] };
+    this.interpolation.reset();
+    this.playerMetadata.clear();
+  }
+
+  reset() {
+    this.interpolation.reset();
+    this.playerMetadata.clear();
+    for (const view of this.playerViews.values()) view.container.destroy();
+    this.playerViews.clear();
+    this.trailGraphics?.clear();
+    this.waitingText?.setVisible(true);
   }
 }

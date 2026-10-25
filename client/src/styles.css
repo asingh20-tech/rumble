@@ -149,32 +149,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid #22d3ee; outline-offs
 .home-how-steps > span:nth-of-type(3) svg { color: #22d3ee; }
 .home-how-steps > span:nth-of-type(5) svg { color: #f472b6; }
 .home-step-line { height: 1px; width: 35px; background: #ffffff20; }
-.home-preview-link { display: inline-flex; align-items: center; gap: .5rem; margin-top: 2rem; padding: .5rem; color: #7f8da6; font-size: .7rem; text-decoration: underline; }
 @keyframes home-glow-drift { to { transform: translate3d(8%, 10%, 0) scale(1.15); } }
 @keyframes home-particle-drift { 0% { opacity: 0; transform: translate3d(0, 35px, 0); } 20%, 75% { opacity: .55; } 100% { opacity: 0; transform: translate3d(25px, -100px, 0); } }
 @keyframes home-logo-flicker { 0%, 47%, 49%, 76%, 78%, 100% { opacity: 1; } 48% { opacity: .88; } 77% { opacity: .94; } }
 
-/* Local arena sandbox, removed from production routing. */
-.arena-preview-page { padding: max(2rem, env(safe-area-inset-top)) clamp(1rem, 4vw, 4rem) 2rem; }
-.arena-preview-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; max-width: 1100px; margin: 0 auto; }
-.arena-back { display: inline-flex; align-items: center; gap: .6rem; min-height: 44px; color: #cbd5e1; font-size: .8rem; }
-.arena-preview-badge { color: #c084fc; border: 1px solid #a855f740; border-radius: 6px; padding: .45rem .7rem; font-size: .6rem; font-weight: 800; letter-spacing: .12em; }
-.arena-preview-intro { text-align: center; padding: 1.5rem 0; }
-.arena-preview-intro h1 { margin: .5rem 0; font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900; letter-spacing: -.04em; }
-.arena-preview-intro > p:last-child { font-size: .9rem; color: #94a3b8; }
+/* Server-driven host arena. */
 .game-canvas-shell { position: relative; width: 100%; max-width: 1100px; margin: 0 auto; overflow: hidden; border: 1px solid #a855f735; border-radius: 18px; background: #090b1a; box-shadow: 0 0 70px #a855f710; }
 .game-canvas-parent { position: absolute; inset: 0; }
 .game-canvas-parent canvas { display: block; }
 .game-canvas-status { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; color: #c084fc; text-align: center; background: #090b1a; font-size: .9rem; }
-.arena-preview-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.25rem; max-width: 1100px; margin: 1rem auto; }
-.arena-preview-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.arena-preview-legend > span { display: inline-flex; align-items: center; gap: .5rem; font-size: .65rem; font-weight: 800; letter-spacing: .08em; color: #cbd5e1; }
-.arena-preview-legend i { width: 7px; height: 7px; background: var(--player-color); border-radius: 50%; box-shadow: 0 0 9px var(--player-color); }
-.arena-preview-controls { display: flex; gap: .5rem; }
-.arena-preview-controls button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; padding: .7rem 1rem; border: 1px solid #ffffff20; border-radius: 9px; background: #151a35; font-size: .75rem; color: #cbd5e1; cursor: pointer; }
-.arena-preview-controls button:active { background: #252340; }
-.arena-preview-footnote { text-align: center; font-size: .7rem; color: #94a3b8; line-height: 1.6; }
-.arena-preview-loading { min-height: 100dvh; display: grid; place-items: center; background: #090b1a; color: #c084fc; }
 @media (hover: hover) {
   .home-action:hover { transform: translateY(-3px); }
   .home-action-primary:hover { box-shadow: 0 0 45px #a855f755; border-color: #e9d5ff; }
@@ -198,8 +181,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid #22d3ee; outline-offs
   .home-code-controls { gap: .5rem; }
   .home-code-controls input { font-size: 1.25rem; padding-left: .7rem; letter-spacing: .17em; }
   .home-code-submit { padding: .65rem .75rem; font-size: .65rem; gap: .4rem; }
-  .arena-preview-toolbar { justify-content: center; }
-  .arena-preview-legend { gap: .8rem; }
   .game-canvas-shell { border-radius: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -207,3 +188,9 @@ a:focus-visible, button:focus-visible { outline: 3px solid #22d3ee; outline-offs
   .home-particle { opacity: .35; }
   .home-action { transition: none; }
 }
+
+.host-game { width: 100%; margin: 2rem auto 0; }
+.host-game-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; max-width: 1100px; margin: 0 auto 1.25rem; }
+.host-game-heading h1 { margin-top: .3rem; font-size: clamp(1.6rem, 3vw, 2.6rem); font-weight: 900; letter-spacing: -.03em; }
+.host-game-heading > p { font-size: .85rem; color: #94a3b8; }
+.host-game-caption { margin-top: 1rem; text-align: center; color: #94a3b8; font-size: .85rem; line-height: 1.6; }
