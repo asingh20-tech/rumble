@@ -20,6 +20,7 @@ import {
   reclaimHost,
   rejoinRoom,
   sanitizeName,
+  startGame,
   toSnapshot,
 } from '../src/rooms.js';
 
@@ -332,5 +333,50 @@ describe('disconnects and grace period', () => {
     expect(store.rooms.size).toBe(0);
     expect(store.sockets.size).toBe(0);
     expect(deleteRoom(store, room.code)).toBeNull();
+  });
+});
+
+describe('startGame', () => {
+  it('rejects non-hosts with NOT_HOST', () => {
+    const { store, join } = setup();
+    join('s1');
+    join('s2');
+    expect(startGame(store, 's1')).toMatchObject({ ok: false, code: ERROR_CODES.NOT_HOST });
+    expect(startGame(store, 'stranger')).toMatchObject({ ok: false, code: ERROR_CODES.NOT_HOST });
+  });
+
+  it('rejects with NOT_ENOUGH_PLAYERS, counting only connected players', () => {
+    const { store, room, join } = setup();
+    join('s1');
+    expect(startGame(store, 'host')).toMatchObject({
+      ok: false,
+      code: ERROR_CODES.NOT_ENOUGH_PLAYERS,
+    });
+    join('s2');
+    disconnectSocket(store, 's2');
+    expect(startGame(store, 'host').code).toBe(ERROR_CODES.NOT_ENOUGH_PLAYERS);
+    expect(room.phase).toBe('lobby');
+  });
+
+  it('starts from the lobby once, then rejects with GAME_IN_PROGRESS', () => {
+    const { store, room, join } = setup();
+    join('s1');
+    join('s2');
+    expect(startGame(store, 'host')).toEqual({ ok: true, room });
+    expect(room.phase).toBe('playing');
+    expect(room.round).toBe(1);
+    expect(startGame(store, 'host')).toMatchObject({
+      ok: false,
+      code: ERROR_CODES.GAME_IN_PROGRESS,
+    });
+    expect(room.round).toBe(1);
+  });
+
+  it('rejects a stale host socket after the host reclaimed the room', () => {
+    const { store, room, join } = setup({ minPlayers: 1, maxPlayers: 4 });
+    join('s1');
+    reclaimHost(store, { socketId: 'host2', code: room.code, hostToken: room.hostToken });
+    expect(startGame(store, 'host').code).toBe(ERROR_CODES.NOT_HOST);
+    expect(startGame(store, 'host2').ok).toBe(true);
   });
 });
