@@ -161,3 +161,105 @@ describe('lobby over sockets', () => {
     expect(await call(c, EVENTS.ROOM_REJOIN, null)).toMatchObject({ ok: false, code: 'BAD_INPUT' });
   });
 });
+
+describe('game:start over sockets', () => {
+  const servers = [];
+  const clients = [];
+
+  const boot = async (env) => {
+    const server = createRumbleServer({ env: { RECONNECT_GRACE_MS: '5000', ...env } });
+    servers.push(server);
+    await new Promise((resolve) => server.httpServer.listen(0, resolve));
+    return { server, baseUrl: `http://localhost:${server.httpServer.address().port}` };
+  };
+  const open = async (baseUrl) => {
+    const c = connect(baseUrl, { transports: ['websocket'], forceNew: true });
+    clients.push(c);
+    await new Promise((resolve, reject) => {
+      c.once('connect', resolve);
+      c.once('connect_error', reject);
+    });
+    return c;
+  };
+  const call = (c, event, payload) => c.timeout(2000).emitWithAck(event, payload);
+
+  afterAll(async () => {
+    for (const c of clients) c.disconnect();
+    for (const s of servers) await new Promise((resolve) => s.io.close(resolve));
+  });
+
+  it('rejects non-hosts, too few players and a second start; broadcasts state while playing', async () => {
+    const { server, baseUrl } = await boot({ NODE_ENV: 'development' });
+    const host = await open(baseUrl);
+    const { room } = await call(host, EVENTS.ROOM_CREATE, {});
+
+    expect(await call(host, EVENTS.GAME_START, {})).toMatchObject({
+      ok: false,
+      code: 'NOT_ENOUGH_PLAYERS',
+    });
+
+    const phone = await open(baseUrl);
+    const joined = await call(phone, EVENTS.ROOM_JOIN, { code: room.code, name: 'Ann' });
+    const stranger = await open(baseUrl);
+    expect(await call(phone, EVENTS.GAME_START, {})).toMatchObject({ ok: false, code: 'NOT_HOST' });
+    expect(await call(stranger, EVENTS.GAME_START, {})).toMatchObject({
+      ok: false,
+      code: 'NOT_HOST',
+    });
+
+    const playing = new Promise((resolve) => {
+      host.on(EVENTS.ROOM_UPDATE, (snap) => snap.phase === 'playing' && resolve(snap));
+    });
+    const states = [];
+    phone.on(EVENTS.GAME_STATE, (s) => states.push(s));
+    expect(await call(host, EVENTS.GAME_START, {})).toEqual({ ok: true });
+    expect((await playing).round).toBe(1);
+    expect(await call(host, EVENTS.GAME_START, {})).toMatchObject({
+      ok: false,
+      code: 'GAME_IN_PROGRESS',
+    });
+
+    // Tilt right; the body should drift right of its spawn point.
+    for (let seq = 0; seq < 8; seq += 1) {
+      phone.emit(EVENTS.PLAYER_INPUT, { x: 1, y: 0, seq });
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(states.length).toBeGreaterThan(5);
+    const first = states[0];
+    const last = states.at(-1);
+    expect(last.tick).toBeGreaterThan(first.tick);
+    expect(last).toMatchObject({ timeLeftMs: 0, events: [] });
+    expect(last.players).toHaveLength(1);
+    expect(last.players[0]).toMatchObject({ id: joined.playerId, alive: true, connected: true });
+    expect(last.players[0].x).toBeGreaterThan(first.players[0].x);
+    for (const key of ['x', 'y', 'vx', 'vy']) {
+      expect(Math.round(last.players[0][key] * 10) / 10).toBe(last.players[0][key]);
+    }
+
+    // Exactly one loop on the room; closing the room stops it.
+    const live = server.store.rooms.get(room.code);
+    expect(live.loop).not.toBeNull();
+    host.disconnect();
+    phone.disconnect();
+    await new Promise((r) => setTimeout(r, 50));
+    server.io.close();
+    expect(live.loop).toBeNull();
+  });
+
+  it('requires MIN_PLAYERS connected players outside development', async () => {
+    const { baseUrl } = await boot({ NODE_ENV: 'production', MIN_PLAYERS: '2' });
+    const host = await open(baseUrl);
+    const { room } = await call(host, EVENTS.ROOM_CREATE, {});
+    const a = await open(baseUrl);
+    await call(a, EVENTS.ROOM_JOIN, { code: room.code, name: 'A' });
+    expect(await call(host, EVENTS.GAME_START, {})).toMatchObject({
+      ok: false,
+      code: 'NOT_ENOUGH_PLAYERS',
+    });
+    const b = await open(baseUrl);
+    await call(b, EVENTS.ROOM_JOIN, { code: room.code, name: 'B' });
+    expect(await call(host, EVENTS.GAME_START)).toEqual({ ok: true });
+  });
+});

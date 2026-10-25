@@ -43,6 +43,8 @@ const MAX_CODE_ATTEMPTS = 1000;
  * @property {number} minPlayers
  * @property {number} maxPlayers
  * @property {number} createdAt
+ * @property {import('./gameLoop.js').GameState|null} game  Simulation state while playing.
+ * @property {{ handle: unknown, clear: () => void }|null} loop  Running tick loop (gameLoop.js).
  */
 
 /**
@@ -185,6 +187,8 @@ export function createRoom(store, { socketId, limits, now = Date.now(), pick }) 
     minPlayers: limits.minPlayers,
     maxPlayers: limits.maxPlayers,
     createdAt: now,
+    game: null,
+    loop: null,
   };
   store.rooms.set(code, room);
   store.sockets.set(socketId, { code, role: 'host' });
@@ -266,6 +270,38 @@ export function joinRoom(store, { socketId, code, name }) {
   room.players.set(player.id, player);
   store.sockets.set(socketId, { code: room.code, role: 'player', playerId: player.id });
   return { ok: true, room, player, duplicate: false };
+}
+
+/**
+ * Validate and apply game:start from `socketId`: host only, from the lobby, with enough
+ * connected players. On success the room moves to 'playing' and the round counter advances;
+ * the caller creates the game state and starts the loop.
+ * @param {RoomStore} store
+ * @param {string} socketId
+ */
+export function startGame(store, socketId) {
+  const binding = store.sockets.get(socketId);
+  if (binding?.role !== 'host') {
+    return ackError(ERROR_CODES.NOT_HOST, 'Only the host can start the game.');
+  }
+  const room = store.rooms.get(binding.code);
+  if (!room) return ackError(ERROR_CODES.ROOM_NOT_FOUND, 'That room no longer exists.');
+  if (room.hostSocketId !== socketId) {
+    return ackError(ERROR_CODES.NOT_HOST, 'Only the host can start the game.');
+  }
+  if (room.phase !== 'lobby') {
+    return ackError(ERROR_CODES.GAME_IN_PROGRESS, 'A game is already in progress.');
+  }
+  const connected = connectedPlayerCount(room);
+  if (connected < room.minPlayers) {
+    return ackError(
+      ERROR_CODES.NOT_ENOUGH_PLAYERS,
+      `Need at least ${room.minPlayers} connected players (have ${connected}).`,
+    );
+  }
+  room.phase = 'playing';
+  room.round += 1;
+  return { ok: true, room };
 }
 
 /**

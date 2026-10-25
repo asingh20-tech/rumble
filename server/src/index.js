@@ -19,6 +19,7 @@ import {
   joinRoom,
   reclaimHost,
   rejoinRoom,
+  startGame,
   toSnapshot,
 } from './rooms.js';
 import {
@@ -30,10 +31,19 @@ import {
   createRateLimiter,
   parseInput,
   parseShake,
+  readInput,
   removeInputState,
+  resetCharge,
   startInputSession,
   takeInputSummary,
 } from './input.js';
+import {
+  buildStatePayload,
+  createGameState,
+  startGameLoop,
+  stepGame,
+  stopGameLoop,
+} from './gameLoop.js';
 
 const DEFAULT_CLIENT_ORIGIN = 'http://localhost:5173';
 
@@ -133,6 +143,8 @@ export function createLobbyHandlers(io, { limits, graceMs, logInputs = limits.is
   const closeRoom = (code, reason) => {
     const room = deleteRoom(store, code);
     if (!room) return;
+    if (stopGameLoop(room)) log(code, 'game loop stopped');
+    room.game = null;
     clearHostTimer(code);
     for (const playerId of room.players.keys()) {
       clearPlayerTimer(playerId);
@@ -141,6 +153,25 @@ export function createLobbyHandlers(io, { limits, graceMs, logInputs = limits.is
     io.to(code).emit(EVENTS.ROOM_CLOSED, { code, reason });
     io.in(code).socketsLeave(code);
     log(code, `closed (${reason})`);
+  };
+
+  const emitState = (room) => {
+    io.to(room.code).emit(
+      EVENTS.GAME_STATE,
+      buildStatePayload(room.game, room, { getCharge: (id) => inputs.get(id)?.charge ?? 0 }),
+    );
+  };
+
+  /** Spawn bodies and (re)start the room's single tick loop. */
+  const beginRound = (room) => {
+    for (const playerId of room.players.keys()) resetCharge(inputs, playerId);
+    room.game = createGameState(room);
+    startGameLoop(room, {
+      step: (dt) => stepGame(room.game, room, (id) => readInput(inputs, id), dt),
+      afterSteps: () => emitState(room),
+    });
+    emitState(room);
+    log(room.code, `round ${room.round} started with ${room.game.bodies.length} players`);
   };
 
   const getLimiters = (socketId) => {
@@ -288,6 +319,20 @@ export function createLobbyHandlers(io, { limits, graceMs, logInputs = limits.is
       reply(ack, ackOk({ accepted: result.accepted, charge: result.charge }));
     });
 
+    socket.on(EVENTS.GAME_START, (payload, ack) => {
+      if (typeof payload === 'function') ack = payload;
+      const result = startGame(store, socket.id);
+      if (!result.ok) {
+        console.log(`[socket ${socket.id}] game:start rejected: ${result.code}`);
+        return reply(ack, result);
+      }
+      const { room } = result;
+      // Phase change first, so clients switch views before the first game:state arrives.
+      reply(ack, ackOk());
+      broadcast(room);
+      beginRound(room);
+    });
+
     socket.on('disconnect', (reason) => {
       console.log(`[socket ${socket.id}] disconnected (${reason})`);
       limiters.delete(socket.id);
@@ -331,6 +376,7 @@ export function createLobbyHandlers(io, { limits, graceMs, logInputs = limits.is
 
   function dispose() {
     clearInterval(inputLogTimer);
+    for (const room of store.rooms.values()) stopGameLoop(room);
     for (const t of playerTimers.values()) clearTimeout(t);
     for (const t of hostTimers.values()) clearTimeout(t);
     playerTimers.clear();
