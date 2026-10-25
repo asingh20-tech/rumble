@@ -1,7 +1,7 @@
 """Build RUMBLE's editable arena model and its top-down Phaser texture.
 
 Run with Blender 4.5 LTS:
-  blender --background --python build_arena.py
+  blender --background --python design/build_arena.py
 
 All geometry, materials, lettering, lighting and glow are generated locally.
 No downloaded models or textures are used. The JavaScript renderer remains 2D;
@@ -23,12 +23,14 @@ def arguments():
     tail = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument('--render-output', type=Path,
+                        default=Path(__file__).resolve().parent.parent / 'client' / 'src' / 'game' / 'assets')
     parser.add_argument('--samples', type=int, default=48)
     return parser.parse_args(tail)
 
 
 def read_contract():
-    source = (Path(__file__).resolve().parents[4] / 'shared' / 'constants.js').read_text()
+    source = (Path(__file__).resolve().parent.parent / 'shared' / 'constants.js').read_text()
     arena = re.search(r'export const ARENA = Object.freeze\(\{(.*?)\}\)', source, re.S).group(1)
     theme = re.search(r'export const THEME = Object.freeze\(\{(.*?)\}\)', source, re.S).group(1)
     values = {name: float(re.search(rf'\b{name}:\s*([\d.]+)', arena).group(1))
@@ -221,6 +223,8 @@ def main():
     options = arguments()
     output = options.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    render_output = options.render_output.resolve()
+    render_output.mkdir(parents=True, exist_ok=True)
     arena, theme = read_contract()
     bpy.context.preferences.filepaths.save_version = 0
     bpy.context.preferences.filepaths.use_file_compression = True
@@ -317,7 +321,7 @@ def main():
     scene.view_settings.exposure = -0.25
     scene.view_settings.gamma = 1
     compositor(scene)
-    scene.render.filepath = str(output / 'arena-platform.png')
+    scene.render.filepath = str(render_output / 'arena-platform.png')
     scene['source_of_truth'] = 'shared/constants.js'
     scene['logical_platform_radius'] = arena['platformRadius']
     scene['png_display_size'] = arena['platformRadius'] * 2 * (11.2 / 10)
@@ -341,7 +345,7 @@ def main():
     bpy.ops.wm.save_as_mainfile(filepath=str(output / 'arena.blend'), compress=True)
     bpy.ops.render.render(write_still=True)
     metadata = {
-        'generator': 'build_arena.py',
+        'generator': 'design/build_arena.py',
         'blender_version': bpy.app.version_string,
         'render_size': [1024, 1024],
         'transparent': True,
@@ -352,10 +356,12 @@ def main():
         'display_size_logical': arena['platformRadius'] * 2 * (11.2 / 10),
         'display_center_logical': [arena['centerX'], arena['centerY']],
         'generated_objects': len(MODEL_OBJECTS),
-        'files': ['arena.blend', 'arena.glb', 'arena-platform.png'],
+        'files': ['arena-platform.png'],
+        'design_source': 'design/arena.blend',
+        'model_export': 'design/arena.glb',
         'textures': 'None: all geometry and materials are procedural.',
     }
-    (output / 'arena-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+    (render_output / 'arena-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     print('RUMBLE arena build complete:', output)
 
 

@@ -1,5 +1,5 @@
 {
-  "generator": "build_arena.py",
+  "generator": "design/build_arena.py",
   "blender_version": "4.5.15 LTS",
   "render_size": [
     1024,
@@ -17,9 +17,9 @@
   ],
   "generated_objects": 120,
   "files": [
-    "arena.blend",
-    "arena.glb",
     "arena-platform.png"
   ],
+  "design_source": "design/arena.blend",
+  "model_export": "design/arena.glb",
   "textures": "None: all geometry and materials are procedural."
 }

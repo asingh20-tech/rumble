@@ -1,9 +1,11 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { socket } from '../network/socket.js';
 import { createHostLobby } from '../components/hostLobby.js';
 import PlayerCard from '../components/PlayerCard.jsx';
 import RoomQRCode from '../components/RoomQRCode.jsx';
+import { createHostGameStream } from '../components/hostGameStream.js';
+import GameCanvas from '../game/GameCanvas.jsx';
 
 export default function HostPage() {
   const [lobby] = useState(() => {
@@ -12,6 +14,9 @@ export default function HostPage() {
     return createHostLobby(socket, storage);
   });
   const { room, status, error, notice, connected, starting, startAccepted } = useSyncExternalStore(lobby.subscribe, lobby.getSnapshot, lobby.getSnapshot);
+  const gameStream = useMemo(() => createHostGameStream({ socket, lobby }), [lobby]);
+  const setCanvas = useCallback((canvas) => gameStream.setCanvas(canvas), [gameStream]);
+  useEffect(() => gameStream.start(), [gameStream]);
   const restoring = status === 'restoring' || status === 'reconnecting';
   const connectedPlayers = room?.players.filter((player) => player.connected).length ?? 0;
   const missingPlayers = room ? Math.max(0, room.minPlayers - connectedPlayers) : 0;
@@ -21,12 +26,21 @@ export default function HostPage() {
     <main className="arcade-page host-page">
       <header className="arcade-header">
         <Link className="arcade-brand" to="/">RUMBLE<span aria-hidden="true">✳</span></Link>
-        <p className="arcade-eyebrow">THE LOBBY / BRING YOUR RIVALS</p>
+        <p className="arcade-eyebrow">{room?.phase === 'playing' ? 'THE ARENA / STAY IN THE RING' : 'THE LOBBY / BRING YOUR RIVALS'}</p>
       </header>
       {isLocalhost && <p className="lobby-notice" role="status">Phones can't reach localhost. Open the tunnel URL instead.</p>}
       {error && <p className="lobby-notice" role="alert">{error}</p>}
       {notice && <p className="lobby-notice" role="status">{notice}</p>}
-      {room ? (
+      {room?.phase === 'playing' ? (
+        <section className="host-game" aria-label="Live game">
+          <div className="host-game-heading">
+            <div><p className="arcade-eyebrow text-neon-cyan">ROOM {room.code}</p><h1>ROUND {room.round}</h1></div>
+            <p>{connectedPlayers} / {room.maxPlayers} connected</p>
+          </div>
+          <GameCanvas ref={setCanvas} />
+          <p className="host-game-caption">Your phones control the action. Keep your eyes on the arena.</p>
+        </section>
+      ) : room ? (
         <>
           <section className="host-join-panel" aria-labelledby="lobby-title">
             <div>

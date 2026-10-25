@@ -1,43 +1,48 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ARENA, THEME } from '@rumble/shared/constants';
+import { MAX_BUFFERED_SNAPSHOTS } from './SnapshotInterpolation.js';
+import { mountPhaserGame } from './gameRuntime.js';
 
-/** Rendering only. Supply renderer snapshots via the snapshot prop or ref.setState(). */
-const GameCanvas = forwardRef(function GameCanvas({ snapshot, className = '' }, ref) {
+/** Receives snapshots imperatively; React renders only loading/error UI. */
+const GameCanvas = forwardRef(function GameCanvas({ className = '' }, ref) {
   const parentRef = useRef(null);
   const gameRef = useRef(null);
   const sceneRef = useRef(null);
-  const latestSnapshot = useRef(snapshot);
+  const pendingFrames = useRef([]);
   const [status, setStatus] = useState('loading');
 
   useImperativeHandle(ref, () => ({
-    setState(nextSnapshot) {
-      latestSnapshot.current = nextSnapshot;
-      sceneRef.current?.setState(nextSnapshot);
+    setState(snapshot, receivedAt = performance.now()) {
+      const last = pendingFrames.current.at(-1);
+      if (last?.snapshot.tick === snapshot.tick) {
+        pendingFrames.current[pendingFrames.current.length - 1] = { snapshot, receivedAt: last.receivedAt };
+      } else if (!last || snapshot.serverTime > last.snapshot.serverTime) {
+        pendingFrames.current.push({ snapshot, receivedAt });
+        pendingFrames.current = pendingFrames.current.slice(-MAX_BUFFERED_SNAPSHOTS);
+      }
+      sceneRef.current?.setState(snapshot, receivedAt);
+    },
+    reset() {
+      pendingFrames.current = [];
+      sceneRef.current?.reset();
     },
   }), []);
 
   useEffect(() => {
-    latestSnapshot.current = snapshot;
-    if (snapshot) sceneRef.current?.setState(snapshot);
-  }, [snapshot]);
-
-  useEffect(() => {
     let cancelled = false;
-    let ownedGame = null;
-    async function mount() {
-      // Awaiting imports lets StrictMode finish its effect replay before creating
-      // a Game. The cancelled flag and ref guard prevent overlapping instances.
+    setStatus('loading');
+    const mounting = mountPhaserGame(async (isCancelled) => {
       const [{ default: Phaser }, { default: ArenaScene }] = await Promise.all([
         import('phaser'), import('./ArenaScene.js'),
       ]);
-      if (cancelled || gameRef.current || !parentRef.current) return;
+      if (isCancelled() || cancelled || gameRef.current || !parentRef.current) return null;
       const scene = new ArenaScene({
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         onReady: () => { if (!cancelled) setStatus('ready'); },
       });
       sceneRef.current = scene;
-      scene.setState(latestSnapshot.current ?? { players: [] });
-      ownedGame = new Phaser.Game({
+      for (const { snapshot, receivedAt } of pendingFrames.current) scene.setState(snapshot, receivedAt);
+      const game = new Phaser.Game({
         type: Phaser.AUTO,
         parent: parentRef.current,
         width: ARENA.width,
@@ -45,19 +50,19 @@ const GameCanvas = forwardRef(function GameCanvas({ snapshot, className = '' }, 
         backgroundColor: THEME.background,
         scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
         render: { antialias: true },
+        fps: { target: 60, limit: 60 },
         audio: { noAudio: true },
         scene: [scene],
       });
-      gameRef.current = ownedGame;
-    }
-    mount().catch(() => { if (!cancelled) setStatus('error'); });
+      gameRef.current = game;
+      return game;
+    });
+    mounting.ready.catch(() => { if (!cancelled) setStatus('error'); });
     return () => {
       cancelled = true;
-      if (ownedGame && gameRef.current === ownedGame) {
-        gameRef.current = null;
-        sceneRef.current = null;
-        ownedGame.destroy(true);
-      }
+      gameRef.current = null;
+      sceneRef.current = null;
+      void mounting.dispose();
     };
   }, []);
 
